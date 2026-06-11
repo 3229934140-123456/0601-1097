@@ -1,0 +1,33 @@
+{
+  "name": "sports-shortvideo-sdk",
+  "version": "1.0.0",
+  "description": "短视频平台SDK，供运动训练App生成动作纠错短片",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "lint": "eslint src/**/*.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "sdk",
+    "video",
+    "sports",
+    "training",
+    "shortvideo"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.0.0",
+    "jest": "^29.5.0",
+    "ts-jest": "^29.1.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "eventemitter3": "^5.0.0",
+    "uuid": "^9.0.0"
+  }
+}
