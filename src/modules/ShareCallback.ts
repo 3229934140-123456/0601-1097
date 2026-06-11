@@ -36,6 +36,37 @@ export class ShareCallback extends BaseEventEmitter<ShareCallbackEvents> {
     paused: true,
     volume: 1,
   };
+  private readonly DRAFT_STORAGE_PREFIX = 'sdk_draft_';
+
+  constructor() {
+    super();
+    this.loadAllDraftsFromStorage();
+  }
+
+  private loadAllDraftsFromStorage(): void {
+    if (typeof localStorage === 'undefined') return;
+
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith(this.DRAFT_STORAGE_PREFIX)) {
+          const data = localStorage.getItem(key);
+          if (data) {
+            try {
+              const draft: Draft = JSON.parse(data);
+              draft.createdAt = new Date(draft.createdAt);
+              draft.updatedAt = new Date(draft.updatedAt);
+              this.drafts.set(draft.id, draft);
+            } catch (e) {
+              console.warn('Failed to parse draft from storage:', key);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load drafts from storage:', e);
+    }
+  }
 
   async exportVideo(
     projectData: ProjectData,
@@ -227,12 +258,27 @@ export class ShareCallback extends BaseEventEmitter<ShareCallbackEvents> {
     };
 
     this.drafts.set(draftId, updatedDraft);
+    
+    try {
+      await this.persistDraft(updatedDraft);
+    } catch (error) {
+      console.warn('Failed to persist draft update:', error);
+    }
+    
     this.emit('draftSaved', updatedDraft);
     return updatedDraft;
   }
 
   deleteDraft(draftId: string): boolean {
-    return this.drafts.delete(draftId);
+    const result = this.drafts.delete(draftId);
+    if (result) {
+      try {
+        this.removeDraftFromStorage(draftId);
+      } catch (error) {
+        console.warn('Failed to remove draft from storage:', error);
+      }
+    }
+    return result;
   }
 
   listDrafts(): Draft[] {
@@ -271,15 +317,25 @@ export class ShareCallback extends BaseEventEmitter<ShareCallbackEvents> {
     });
   }
 
+  private getDraftStorageKey(draftId: string): string {
+    return `${this.DRAFT_STORAGE_PREFIX}${draftId}`;
+  }
+
   private async persistDraft(draft: Draft): Promise<void> {
     if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(`draft_${draft.id}`, JSON.stringify(draft));
+      localStorage.setItem(this.getDraftStorageKey(draft.id), JSON.stringify(draft));
+    }
+  }
+
+  private removeDraftFromStorage(draftId: string): void {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(this.getDraftStorageKey(draftId));
     }
   }
 
   private async loadPersistedDraft(draftId: string): Promise<Draft | null> {
     if (typeof localStorage !== 'undefined') {
-      const data = localStorage.getItem(`draft_${draftId}`);
+      const data = localStorage.getItem(this.getDraftStorageKey(draftId));
       if (data) {
         const draft = JSON.parse(data);
         draft.createdAt = new Date(draft.createdAt);

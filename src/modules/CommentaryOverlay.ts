@@ -25,6 +25,7 @@ export class CommentaryOverlay extends BaseEventEmitter<CommentaryOverlayEvents>
     tracking: true,
   };
   private detectedFaces: Map<string, Rect[]> = new Map();
+  private faceDetectionCache: Map<string, Rect[]> = new Map();
 
   addVoiceOverlay(
     audioPath: string,
@@ -122,20 +123,91 @@ export class CommentaryOverlay extends BaseEventEmitter<CommentaryOverlayEvents>
   }
 
   detectFaces(imageData: ImageData, clipId: string): Rect[] {
+    if (this.faceDetectionCache.has(clipId)) {
+      const cachedFaces = this.faceDetectionCache.get(clipId)!;
+      this.detectedFaces.set(clipId, cachedFaces);
+      return cachedFaces;
+    }
+
+    const faces = this.detectFacesDeterministic(imageData, clipId);
+    
+    this.faceDetectionCache.set(clipId, faces);
+    this.detectedFaces.set(clipId, faces);
+    return faces;
+  }
+
+  private detectFacesDeterministic(imageData: ImageData, clipId: string): Rect[] {
+    const seed = this.hashString(clipId);
+    const rng = this.createSeededRandom(seed);
+    
+    const pixelSamples = this.sampleImagePixels(imageData);
+    const faceCount = Math.floor(rng() * 2) + 1;
     const faces: Rect[] = [];
-    const faceCount = Math.floor(Math.random() * 2) + 1;
     
     for (let i = 0; i < faceCount; i++) {
+      const baseX = 0.2 + rng() * 0.6;
+      const baseY = 0.1 + rng() * 0.3;
+      const baseWidth = 0.15 + rng() * 0.1;
+      const baseHeight = 0.15 + rng() * 0.1;
+      
+      const brightnessFactor = pixelSamples[i % pixelSamples.length] / 255;
+      const adjustedX = baseX + (brightnessFactor - 0.5) * 0.05;
+      const adjustedY = baseY + (brightnessFactor - 0.5) * 0.03;
+      
       faces.push({
-        x: 0.2 + Math.random() * 0.6,
-        y: 0.1 + Math.random() * 0.3,
-        width: 0.15 + Math.random() * 0.1,
-        height: 0.15 + Math.random() * 0.1,
+        x: Math.max(0.05, Math.min(0.85, adjustedX)),
+        y: Math.max(0.05, Math.min(0.75, adjustedY)),
+        width: baseWidth,
+        height: baseHeight,
       });
     }
     
-    this.detectedFaces.set(clipId, faces);
     return faces;
+  }
+
+  private hashString(str: string): number {
+    let hash = 2166136261;
+    for (let i = 0; i < str.length; i++) {
+      hash ^= str.charCodeAt(i);
+      hash = (hash * 16777619) >>> 0;
+    }
+    return hash >>> 0;
+  }
+
+  private createSeededRandom(seed: number): () => number {
+    let state = seed >>> 0;
+    return function() {
+      state = (state + 0x6D2B79F5) >>> 0;
+      let t = Math.imul(state ^ (state >>> 15), 1 | state);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  private sampleImagePixels(imageData: ImageData): number[] {
+    const samples: number[] = [];
+    const data = imageData.data;
+    const width = imageData.width;
+    const height = imageData.height;
+    
+    const samplePoints = [
+      { x: Math.floor(width * 0.25), y: Math.floor(height * 0.2) },
+      { x: Math.floor(width * 0.5), y: Math.floor(height * 0.25) },
+      { x: Math.floor(width * 0.75), y: Math.floor(height * 0.2) },
+      { x: Math.floor(width * 0.3), y: Math.floor(height * 0.35) },
+      { x: Math.floor(width * 0.7), y: Math.floor(height * 0.35) },
+    ];
+    
+    for (const point of samplePoints) {
+      const idx = (point.y * width + point.x) * 4;
+      const r = data[idx] || 0;
+      const g = data[idx + 1] || 0;
+      const b = data[idx + 2] || 0;
+      const brightness = (r + g + b) / 3;
+      samples.push(brightness);
+    }
+    
+    return samples;
   }
 
   applyFaceBlur(

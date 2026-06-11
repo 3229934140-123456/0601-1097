@@ -159,8 +159,9 @@ export class RhythmAligner extends BaseEventEmitter<RhythmAlignerEvents> {
     const step = 0.1;
     
     for (let t = 0; t <= baseDuration; t += step) {
-      const speedMultiplier = this.getSpeedMultiplierAtTime(clipId, t, slowMotions);
-      adjustedTime += step * speedMultiplier;
+      const speed = this.getSpeedAtTime(clipId, t, slowMotions);
+      const timeScale = 1 / speed;
+      adjustedTime += step * timeScale;
       timeline.push({
         originalTime: Math.round(t * 10) / 10,
         adjustedTime: Math.round(adjustedTime * 10) / 10,
@@ -168,6 +169,19 @@ export class RhythmAligner extends BaseEventEmitter<RhythmAlignerEvents> {
     }
     
     return timeline;
+  }
+
+  getAdjustedDuration(clipId: string, baseDuration: number): number {
+    const slowMotions = this.getSlowMotionByClip(clipId);
+    let adjustedDuration = 0;
+    const step = 0.01;
+    
+    for (let t = 0; t < baseDuration; t += step) {
+      const speed = this.getSpeedAtTime(clipId, t, slowMotions);
+      adjustedDuration += step / speed;
+    }
+    
+    return Math.round(adjustedDuration * 100) / 100;
   }
 
   renderComparisonOnCanvas(
@@ -198,7 +212,7 @@ export class RhythmAligner extends BaseEventEmitter<RhythmAlignerEvents> {
     this.comparisonSegments.clear();
   }
 
-  private getSpeedMultiplierAtTime(
+  private getSpeedAtTime(
     clipId: string,
     time: number,
     segments: SlowMotionSegment[]

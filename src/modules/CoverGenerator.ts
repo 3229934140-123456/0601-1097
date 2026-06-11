@@ -101,39 +101,31 @@ export class CoverGenerator extends BaseEventEmitter<CoverGeneratorEvents> {
       throw new Error(`Template not found: ${config.templateId}`);
     }
 
-    return new Promise((resolve, reject) => {
-      try {
-        const canvas = this.createCanvas(template.orientation);
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          reject(new Error('Failed to get canvas context'));
-          return;
-        }
+    const canvas = this.createCanvas(template.orientation);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      throw new Error('Failed to get canvas context');
+    }
 
-        this.renderCover(ctx, config, template, canvas.width, canvas.height);
+    await this.renderCoverAsync(ctx, config, template, canvas.width, canvas.height);
 
-        const imagePath = `cover_${generateId()}.png`;
-        this.emit('coverGenerated', { coverId: generateId(), imagePath, config });
-        resolve(imagePath);
-      } catch (error) {
-        this.emit('error', error as Error);
-        reject(error);
-      }
-    });
+    const imagePath = `cover_${generateId()}.png`;
+    this.emit('coverGenerated', { coverId: generateId(), imagePath, config });
+    return imagePath;
   }
 
-  renderCoverToCanvas(
+  async renderCoverToCanvas(
     ctx: CanvasRenderingContext2D,
     config: CoverConfig,
     width: number,
     height: number
-  ): void {
+  ): Promise<void> {
     const template = this.getTemplate(config.templateId);
     if (!template) {
       throw new Error(`Template not found: ${config.templateId}`);
     }
 
-    this.renderCover(ctx, config, template, width, height);
+    await this.renderCoverAsync(ctx, config, template, width, height);
   }
 
   private createCanvas(orientation: VideoOrientation): HTMLCanvasElement {
@@ -148,28 +140,28 @@ export class CoverGenerator extends BaseEventEmitter<CoverGeneratorEvents> {
     return canvas;
   }
 
-  private renderCover(
+  private async renderCoverAsync(
     ctx: CanvasRenderingContext2D,
     config: CoverConfig,
     template: CoverTemplate,
     width: number,
     height: number
-  ): void {
+  ): Promise<void> {
     ctx.fillStyle = '#1a1a2e';
     ctx.fillRect(0, 0, width, height);
 
     switch (template.layout) {
       case 'image-only':
-        this.renderImageOnlyLayout(ctx, config, width, height);
+        await this.renderImageOnlyLayout(ctx, config, width, height);
         break;
       case 'image-title':
-        this.renderImageTitleLayout(ctx, config, width, height);
+        await this.renderImageTitleLayout(ctx, config, width, height);
         break;
       case 'image-title-subtitle':
-        this.renderImageTitleSubtitleLayout(ctx, config, width, height);
+        await this.renderImageTitleSubtitleLayout(ctx, config, width, height);
         break;
       case 'comparison':
-        this.renderComparisonLayout(ctx, config, width, height);
+        await this.renderComparisonLayout(ctx, config, width, height);
         break;
     }
 
@@ -178,14 +170,17 @@ export class CoverGenerator extends BaseEventEmitter<CoverGeneratorEvents> {
     }
   }
 
-  private renderImageOnlyLayout(
+  private async renderImageOnlyLayout(
     ctx: CanvasRenderingContext2D,
     config: CoverConfig,
     width: number,
     height: number
-  ): void {
+  ): Promise<void> {
     if (config.imagePath) {
-      this.drawCoverImage(ctx, config.imagePath, 0, 0, width, height);
+      const imageLoaded = await this.drawCoverImage(ctx, config.imagePath, 0, 0, width, height);
+      if (!imageLoaded) {
+        this.drawPlaceholder(ctx, 0, 0, width, height, '封面图加载失败');
+      }
     }
 
     const gradient = ctx.createLinearGradient(0, height * 0.6, 0, height);
@@ -195,13 +190,13 @@ export class CoverGenerator extends BaseEventEmitter<CoverGeneratorEvents> {
     ctx.fillRect(0, height * 0.6, width, height * 0.4);
   }
 
-  private renderImageTitleLayout(
+  private async renderImageTitleLayout(
     ctx: CanvasRenderingContext2D,
     config: CoverConfig,
     width: number,
     height: number
-  ): void {
-    this.renderImageOnlyLayout(ctx, config, width, height);
+  ): Promise<void> {
+    await this.renderImageOnlyLayout(ctx, config, width, height);
 
     if (config.title) {
       ctx.fillStyle = '#ffffff';
@@ -214,13 +209,13 @@ export class CoverGenerator extends BaseEventEmitter<CoverGeneratorEvents> {
     }
   }
 
-  private renderImageTitleSubtitleLayout(
+  private async renderImageTitleSubtitleLayout(
     ctx: CanvasRenderingContext2D,
     config: CoverConfig,
     width: number,
     height: number
-  ): void {
-    this.renderImageTitleLayout(ctx, config, width, height);
+  ): Promise<void> {
+    await this.renderImageTitleLayout(ctx, config, width, height);
 
     if (config.subtitle) {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
@@ -233,44 +228,62 @@ export class CoverGenerator extends BaseEventEmitter<CoverGeneratorEvents> {
     }
   }
 
-  private renderComparisonLayout(
+  private async renderComparisonLayout(
     ctx: CanvasRenderingContext2D,
     config: CoverConfig,
     width: number,
     height: number
-  ): void {
+  ): Promise<void> {
     const isPortrait = height > width;
     const half = isPortrait ? height / 2 : width / 2;
 
-    if (config.beforeImagePath) {
-      if (isPortrait) {
-        this.drawCoverImage(ctx, config.beforeImagePath, 0, 0, width, half);
+    const beforeImagePromise = (async () => {
+      if (config.beforeImagePath) {
+        if (isPortrait) {
+          const loaded = await this.drawCoverImage(ctx, config.beforeImagePath, 0, 0, width, half);
+          if (!loaded) {
+            this.drawPlaceholder(ctx, 0, 0, width, half, '纠正前图加载失败');
+          }
+        } else {
+          const loaded = await this.drawCoverImage(ctx, config.beforeImagePath, 0, 0, half, height);
+          if (!loaded) {
+            this.drawPlaceholder(ctx, 0, 0, half, height, '纠正前图加载失败');
+          }
+        }
       } else {
-        this.drawCoverImage(ctx, config.beforeImagePath, 0, 0, half, height);
+        ctx.fillStyle = '#2d2d44';
+        if (isPortrait) {
+          ctx.fillRect(0, 0, width, half);
+        } else {
+          ctx.fillRect(0, 0, half, height);
+        }
       }
-    } else {
-      ctx.fillStyle = '#2d2d44';
-      if (isPortrait) {
-        ctx.fillRect(0, 0, width, half);
-      } else {
-        ctx.fillRect(0, 0, half, height);
-      }
-    }
+    })();
 
-    if (config.afterImagePath) {
-      if (isPortrait) {
-        this.drawCoverImage(ctx, config.afterImagePath, 0, half, width, half);
+    const afterImagePromise = (async () => {
+      if (config.afterImagePath) {
+        if (isPortrait) {
+          const loaded = await this.drawCoverImage(ctx, config.afterImagePath, 0, half, width, half);
+          if (!loaded) {
+            this.drawPlaceholder(ctx, 0, half, width, half, '纠正后图加载失败');
+          }
+        } else {
+          const loaded = await this.drawCoverImage(ctx, config.afterImagePath, half, 0, half, height);
+          if (!loaded) {
+            this.drawPlaceholder(ctx, half, 0, half, height, '纠正后图加载失败');
+          }
+        }
       } else {
-        this.drawCoverImage(ctx, config.afterImagePath, half, 0, half, height);
+        ctx.fillStyle = '#3d3d54';
+        if (isPortrait) {
+          ctx.fillRect(0, half, width, half);
+        } else {
+          ctx.fillRect(half, 0, half, height);
+        }
       }
-    } else {
-      ctx.fillStyle = '#3d3d54';
-      if (isPortrait) {
-        ctx.fillRect(0, half, width, half);
-      } else {
-        ctx.fillRect(half, 0, half, height);
-      }
-    }
+    })();
+
+    await Promise.all([beforeImagePromise, afterImagePromise]);
 
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 4;
@@ -307,24 +320,59 @@ export class CoverGenerator extends BaseEventEmitter<CoverGeneratorEvents> {
     }
   }
 
-  private drawCoverImage(
+  private async drawCoverImage(
     ctx: CanvasRenderingContext2D,
     imagePath: string,
     x: number,
     y: number,
     width: number,
     height: number
+  ): Promise<boolean> {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+
+      img.onload = () => {
+        const scale = Math.max(width / img.width, height / img.height);
+        const scaledWidth = img.width * scale;
+        const scaledHeight = img.height * scale;
+        const offsetX = x + (width - scaledWidth) / 2;
+        const offsetY = y + (height - scaledHeight) / 2;
+        
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, y, width, height);
+        ctx.clip();
+        ctx.drawImage(img, offsetX, offsetY, scaledWidth, scaledHeight);
+        ctx.restore();
+        resolve(true);
+      };
+
+      img.onerror = () => {
+        resolve(false);
+      };
+
+      img.src = imagePath;
+    });
+  }
+
+  private drawPlaceholder(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    text: string
   ): void {
-    const img = new Image();
-    img.src = imagePath;
-    
-    const scale = Math.max(width / img.width, height / img.height);
-    const scaledWidth = img.width * scale;
-    const scaledHeight = img.height * scale;
-    const offsetX = x + (width - scaledWidth) / 2;
-    const offsetY = y + (height - scaledHeight) / 2;
-    
-    ctx.drawImage(img, offsetX, offsetY, scaledWidth, scaledHeight);
+    ctx.fillStyle = '#3d3d54';
+    ctx.fillRect(x, y, width, height);
+
+    ctx.fillStyle = '#888888';
+    ctx.font = '24px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🖼️', x + width / 2, y + height / 2 - 20);
+    ctx.fillText(text, x + width / 2, y + height / 2 + 20);
   }
 
   private renderTrainingStats(

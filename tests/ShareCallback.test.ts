@@ -37,11 +37,13 @@ describe('ShareCallback', () => {
   };
 
   beforeEach(() => {
+    localStorage.clear();
     shareCallback = new ShareCallback();
   });
 
   afterEach(() => {
     shareCallback.clearAll();
+    localStorage.clear();
   });
 
   describe('exportVideo', () => {

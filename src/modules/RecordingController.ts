@@ -95,8 +95,13 @@ export class RecordingController extends BaseEventEmitter<RecordingEvents> {
         return;
       }
 
+      let totalPauseTime = this.accumulatedPauseTime;
+      if (this.state === 'paused') {
+        totalPauseTime += performance.now() - this.pausedTime;
+      }
+
       const endTime = performance.now();
-      const duration = (endTime - this.startTime - this.accumulatedPauseTime) / 1000;
+      const duration = (endTime - this.startTime - totalPauseTime) / 1000;
 
       if (this.mediaRecorder) {
         const chunks: BlobPart[] = [];
